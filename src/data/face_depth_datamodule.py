@@ -370,7 +370,8 @@ class SynthHumanDataset(Dataset):
         kp_path = self.kp_paths[index]
 
         ### raw data preparation
-        img = cv2.imread(img_path, cv2.IMREAD_COLOR_RGB)
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
         depth = cv2.imread(depth_path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)/100 # cm
         depth_max = np.max(depth)

@@ -27,8 +27,8 @@ class FaceDepthModel(pl.LightningModule):
         self.decoder = Decoder(output_channels=output_channels)
         
         # Loss functions for depth estimation
-        self.l1_loss = nn.L1Loss()
-        self.l2_loss = nn.MSELoss()
+        self.l1_loss = nn.L1Loss(reduction='none')
+        self.l2_loss = nn.MSELoss(reduction='none')
         self.bce_loss = nn.BCEWithLogitsLoss()
                 
     def forward(self, x):
@@ -42,9 +42,12 @@ class FaceDepthModel(pl.LightningModule):
                      targets: torch.Tensor, 
                      aux_weight: float = 0.4) -> Dict[str, torch.Tensor]:               
         
+        gt_mask = targets["mask"]
         # Main depth loss (combination of L1 and L2)
-        l1_loss = self.l1_loss(outputs["final"][:, :1], targets["depth"])
-        l2_loss = self.l2_loss(outputs["final"][:, :1], targets["depth"])
+        l1_loss = self.l1_loss(outputs["final"][:, :1], targets["depth"])[gt_mask >0.99]
+        l2_loss = self.l2_loss(outputs["final"][:, :1], targets["depth"])[gt_mask >0.99]
+        l1_loss = l1_loss.mean()
+        l2_loss = l2_loss.mean()
         main_loss = l1_loss + 0.5 * l2_loss  # Weighted combination
 
         ce_loss = self.bce_loss(outputs["final"][:, 1:], targets["mask"])
@@ -53,11 +56,14 @@ class FaceDepthModel(pl.LightningModule):
         total_loss = main_loss + 0.01 * ce_loss
         aux_loss = 0
         
-        if 'aux_outputs' in outputs and outputs['aux_outputs']:
+        if 'auxs' in outputs and outputs['auxs']:
             for aux_out in outputs['auxs'].values():
-                aux_l1 = self.l1_loss(aux_out[:, :1], targets["depth"])
-                aux_l2 = self.l2_loss(aux_out[:, :1], targets["depth"])
-                aux_loss += (aux_l1 + 0.5 * aux_l2)
+                aux_l1 = self.l1_loss(aux_out[:, :1], targets["depth"])[gt_mask >0.99]
+                aux_l2 = self.l2_loss(aux_out[:, :1], targets["depth"])[gt_mask >0.99]
+                aux_l1 = aux_l1.mean()
+                aux_l2 = aux_l2.mean()
+                aux_ce = self.bce_loss(aux_out[:, 1:], targets["mask"])
+                aux_loss += (aux_l1 + 0.5 * aux_l2 + 0.01 * ce_loss)
             
             aux_loss = aux_loss / len(outputs['auxs'])
             total_loss = total_loss + aux_weight * aux_loss

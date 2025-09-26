@@ -25,6 +25,7 @@ class Encoder(nn.Module):
         super().__init__()       
     
         if dinov3_weights is None:
+            print("Loading DINOv3 from local")
             REPO_DIR = "src/models/"
             MODEL_PATH = "checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
             dinov3 = torch.hub.load(REPO_DIR, 'dinov3_vitl16', source='local', weights=MODEL_PATH).cuda()

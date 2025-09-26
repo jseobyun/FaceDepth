@@ -238,48 +238,6 @@ class Decoder(nn.Module):
             'final': output,            
             'auxs': aux_outputs
         }
-    
-    def compute_loss(self, outputs: Dict[str, torch.Tensor], 
-                     targets: torch.Tensor, 
-                     aux_weight: float = 0.4) -> Dict[str, torch.Tensor]:
-        """
-        Compute depth estimation loss with deep supervision.
-        
-        Args:
-            outputs: Dictionary from forward pass
-            targets: Ground truth depth map (B, 1, H, W) or (B, H, W)
-            aux_weight: Weight for auxiliary losses
-            
-        Returns:
-            Dictionary with total loss and components
-        """
-        # Ensure targets have channel dimension
-        if targets.dim() == 3:  # (B, H, W)
-            targets = targets.unsqueeze(1)  # (B, 1, H, W)
-        
-        # Use L1 loss for depth estimation
-        # Could also use L2 (MSE) or a combination
-        criterion = nn.L1Loss()
-        
-        # Main depth loss
-        main_loss = criterion(outputs['depth'], targets)
-        
-        # Auxiliary losses for deep supervision
-        total_loss = main_loss
-        aux_loss = 0
-        
-        if 'aux_outputs' in outputs and outputs['aux_outputs']:
-            for aux_out in outputs['aux_outputs'].values():
-                aux_loss += criterion(aux_out, targets)
-            
-            aux_loss = aux_loss / len(outputs['aux_outputs'])
-            total_loss = main_loss + aux_weight * aux_loss
-        
-        return {
-            'total_loss': total_loss,
-            'main_loss': main_loss,
-            'aux_loss': aux_loss if isinstance(aux_loss, torch.Tensor) else torch.tensor(aux_loss)
-        }
 
 if __name__ == "__main__":
     # Test decoder with simulated encoder output

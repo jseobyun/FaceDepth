@@ -16,7 +16,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Train Face Depth Estimation Model')
     
     # Data arguments - now supports config file or command line
-    parser.add_argument('--config', type=str, default="/home/jseob/Desktop/yjs/codes/FaceDepth/configs/default_config.yaml", help='Path to configuration YAML file')    
+    parser.add_argument('--config', type=str, default="/home/idc-r2w2/Desktop/yjs/codes/FaceDepth/configs/default_config.yaml", help='Path to configuration YAML file')    
             
     # Other arguments
     parser.add_argument('--resume_from', type=str, default=None, help='Path to checkpoint to resume training from')
@@ -37,6 +37,7 @@ def setup_callbacks(callback_config):
         mode=callback_config["checkpoint"]["mode"],
         save_top_k=callback_config["checkpoint"]["save_top_k"],
         save_last=callback_config["checkpoint"]["save_last"],
+        every_n_epochs=callback_config["checkpoint"]["every_n_epochs"],
         verbose=True
     )
     callbacks.append(checkpoint_callback)
