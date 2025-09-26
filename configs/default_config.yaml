@@ -9,7 +9,7 @@ training:
   accumulate_grad_batches: 1
   seed : 42
   img_size: [448, 448]
-  batch_size: 2
+  batch_size: 16
   num_workers: 4
   augmentation: true  
   
@@ -37,6 +37,7 @@ callbacks:
     monitor: val/loss
     mode: min
     save_top_k: 3
+    every_n_epochs: 1
     save_last: true
   early_stopping:
     monitor: val/loss
@@ -45,9 +46,9 @@ callbacks:
     
 # Hardware configuration
 hardware:
-  gpus: [0] # [0, 1, 2, 3,]
+  gpus: [0, 1, 2, 3] # [0, 1, 2, 3,]
   accelerator: gpu
-  precision: 16-mixed  # Use mixed precision if available
+  precision: 32  # Use mixed precision if available
   
 # Logging configuration
 logging:
@@ -59,12 +60,12 @@ logging:
 
 datasets:
   - type: synthhuman
-    data_dir: /media/jseob/SSD_HEAD/david/SynthHuman
+    data_dir: /media/idc-r2w2/data_sdc/jseob/data/synthhuman
     bg_dir : None    
     weight: 0.35  # Optional: sampling weight
 
   - type: merged
-    data_dir: /media/jseob/7c338ab7-a4a5-460a-a3bb-6c26309b51ba/datasets/head_uvd
-    bg_dir: /media/jseob/7c338ab7-a4a5-460a-a3bb-6c26309b51ba/datasets/no_humans
+    data_dir: /media/idc-r2w2/data_sdc/jseob/data/head_uvd
+    bg_dir: /media/idc-r2w2/data_sdc/jseob/data/no_humans
     weight: 0.65    
 
