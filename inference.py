@@ -18,7 +18,7 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Face Depth Estimation Inference')
     
-    parser.add_argument('--input_dir', type=str, default="/home/jseob/Downloads/TEST/dxf_test/images",
+    parser.add_argument('--input_dir', type=str, default="/home/jseob/Downloads/TEST/FD_test",
                         help='Path to input image or directory')
     parser.add_argument('--output_dir', type=str, default='./outputs',
                         help='Path to output directory')
@@ -31,9 +31,7 @@ def parse_args():
     parser.add_argument('--image_size', type=int, nargs=2, default=[512, 512],
                         help='Input image size (height, width)')    
     parser.add_argument('--save_visualization', action='store_true', default=False,
-                        help='Save depth visualization')
-    parser.add_argument('--cmap', type=str, default='jet',
-                        help='Colormap for depth visualization')
+                        help='Save depth visualization')    
     parser.add_argument('--output_channels', type=int, default=2,
                         help='Number of output channels (depth + mask)')
     parser.add_argument('--batch_size', type=int, default=1,
