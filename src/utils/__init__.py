@@ -1,4 +1,4 @@
 from .config_loader import ConfigLoader
-from .visualization import FaceParsingVisualizer
+from .visualization import FaceDepthVisualizer
 
-__all__ = ['ConfigLoader', 'FaceParsingVisualizer']
+__all__ = ['ConfigLoader', 'FaceDepthVisualizer']

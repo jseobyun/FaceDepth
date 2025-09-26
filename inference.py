@@ -2,21 +2,23 @@ import os
 import cv2
 import argparse
 import torch
+import open3d as o3d
 from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 import numpy as np
 from torchvision import transforms
+from typing import Optional
 
-from src.models import FaceParsingModel
-from src.utils import FaceParsingVisualizer
+from src.models import FaceDepthModel
+from src.utils.visualization import FaceDepthVisualizer
 
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Face Parsing Inference')
+    parser = argparse.ArgumentParser(description='Face Depth Estimation Inference')
     
-    parser.add_argument('--input_dir', type=str, default="/media/jseob/3D-PHOTO-02/k_hairstyle_hqset/Training/masked/0003.기타레이어드/0016.AP084432_before",
+    parser.add_argument('--input_dir', type=str, default="/home/jseob/Downloads/TEST/dxf_test/images",
                         help='Path to input image or directory')
     parser.add_argument('--output_dir', type=str, default='./outputs',
                         help='Path to output directory')
@@ -27,19 +29,21 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                         help='Device to run inference on')
     parser.add_argument('--image_size', type=int, nargs=2, default=[512, 512],
-                        help='Input image size (height, width)')
-    parser.add_argument('--num_classes', type=int, default=11,
-                        help='Number of segmentation classes')
-    parser.add_argument('--save_overlay', action='store_true', default=False,
-                        help='Save overlay visualization')
-    parser.add_argument('--alpha', type=float, default=0.5,
-                        help='Transparency for overlay visualization')
+                        help='Input image size (height, width)')    
+    parser.add_argument('--save_visualization', action='store_true', default=False,
+                        help='Save depth visualization')
+    parser.add_argument('--cmap', type=str, default='jet',
+                        help='Colormap for depth visualization')
+    parser.add_argument('--output_channels', type=int, default=2,
+                        help='Number of output channels (depth + mask)')
+    parser.add_argument('--batch_size', type=int, default=1,
+                        help='Batch size for processing multiple images')
     
     return parser.parse_args()
 
 
-class FaceParsingInference:
-    """Class for running face parsing inference."""
+class FaceDepthInference:
+    """Class for running face depth estimation inference."""
     
     def __init__(
         self,
@@ -47,11 +51,11 @@ class FaceParsingInference:
         dinov3_checkpoint_path: str = None,
         device: str = 'cuda',
         image_size: tuple = (512, 512),
-        num_classes: int = 11
+        output_channels: int = 2
     ):
         self.device = torch.device(device)
         self.image_size = image_size
-        self.num_classes = num_classes
+        self.output_channels = output_channels
         
         # Load model
         self.model = self._load_model(checkpoint_path, dinov3_checkpoint_path)
@@ -64,7 +68,7 @@ class FaceParsingInference:
         ])
         
         # Visualizer
-        self.visualizer = FaceParsingVisualizer()
+        self.visualizer = FaceDepthVisualizer()
     
     def _load_model(self, checkpoint_path: str, dinov3_checkpoint_path: str = None):
         """Load model from checkpoint with separate dinov3 loading."""
@@ -83,7 +87,7 @@ class FaceParsingInference:
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         
         # Create model
-        model = FaceParsingModel(num_classes=self.num_classes)
+        model = FaceDepthModel(output_channels=self.output_channels)
         
         # Set dinov3 in encoder if provided
         if dinov3 is not None:
@@ -119,80 +123,109 @@ class FaceParsingInference:
     
     def predict(self, image_paths):
         """
-        Run inference on a single image.
+        Run inference on images for depth estimation.
         
         Args:
-            image_path: Path to input image
+            image_paths: List of paths to input images
             
         Returns:
-            Predicted segmentation mask
+            Predicted depth maps and masks
         """
-        # Preprocess image
-
+        # Preprocess images
         image_tensors = []
+        original_sizes = []
         for image_path in image_paths:
             image_tensor, original_size = self.preprocess_image(image_path)
             image_tensors.append(image_tensor)
+            original_sizes.append(original_size)
         
         image_tensors = torch.cat(image_tensors, dim=0)
         
         # Run inference
         with torch.no_grad():
-            logits = self.model(image_tensors)["probabilities"]
-            pred_mask = torch.argmax(logits, dim=1)
+            outputs = self.model(image_tensors)
+            if isinstance(outputs, dict) and 'final' in outputs:
+                pred_output = outputs['final']
+            else:
+                pred_output = outputs
+            
+            # Split depth and mask channels
+            pred_depth = pred_output[:, :1]  # First channel is depth
+            pred_mask = None
+            if pred_output.shape[1] > 1:
+                pred_mask = torch.sigmoid(pred_output[:, 1:])  # Second channel is mask
         
-        # Resize to original size
-        # pred_mask = torch.nn.functional.interpolate(
-        #     pred_mask.unsqueeze(1).float(),
-        #     size=original_size[::-1],  # PIL uses (W, H), torch uses (H, W)
-        #     mode='nearest'
-        # ).squeeze(1).long()
-        
-        return pred_mask
+        return pred_depth, pred_mask, original_sizes
     
     def save_results(
         self,
         image_paths,
-        pred_masks: torch.Tensor,        
+        pred_depth: torch.Tensor,
+        pred_mask: Optional[torch.Tensor],
+        original_sizes: list,
         output_dir: str,
-        save_overlay: bool = True,
-        alpha: float = 0.5
+        save_visualization: bool = True,
+        cmap: str = 'jet'
     ):
-        """Save prediction results."""        
+        """Save depth estimation results."""
         
         os.makedirs(output_dir, exist_ok=True)
-        # Get base name
+        
         for img_idx, image_path in enumerate(image_paths):
             base_name = Path(image_path).stem
             
-            # Save segmentation mask
-            mask_np = pred_masks[img_idx].squeeze().cpu().numpy()
-            mask_cv = mask_np.astype(np.uint8)
-            cv2.imwrite(os.path.join(output_dir, base_name+".jpg"), mask_cv)
-
-            # mask_color = self.visualizer.mask_to_colormap(mask_np)        
-            # mask_image = Image.fromarray(mask_color)
-            # mask_image.save(output_dir / f"{base_name}_mask.png")
+            # Get depth map for this image
+            depth_map = pred_depth[img_idx].squeeze()
             
-            # Save overlay if requested
-            if save_overlay:
-                vis_array = self.visualizer.visualize_prediction(
-                    image_path,
-                    pred_masks[img_idx].squeeze(),
-                    alpha=alpha,
-                    save_path=str(output_dir / f"{base_name}_visualization.png")
-                )
+            # Resize to original size if needed
+            if original_sizes[img_idx] is not None:
+                depth_resized = torch.nn.functional.interpolate(
+                    depth_map.unsqueeze(0).unsqueeze(0),
+                    size=original_sizes[img_idx][::-1],  # PIL uses (W, H), torch uses (H, W)
+                    mode='bilinear',
+                    align_corners=False
+                ).squeeze()
+            else:
+                depth_resized = depth_map
             
-            # print(f"Results saved to {output_dir}")
+                        
+            mask = pred_mask[img_idx].squeeze()
+            if original_sizes[img_idx] is not None:
+                mask_resized = torch.nn.functional.interpolate(
+                    mask.unsqueeze(0).unsqueeze(0),
+                    size=original_sizes[img_idx][::-1],
+                    mode='nearest'
+                ).squeeze()
+            else:
+                mask_resized = mask
+            
+            mask_np = (mask_resized.cpu().numpy() * 255).astype(np.uint8)
+            cv2.imwrite(os.path.join(output_dir, f"{base_name}_mask.png"), mask_np)
+            
+            
+                
+            # Save side-by-side visualization
+            pcd = self.visualizer.visualize_prediction(
+                image_path,
+                depth_resized,   
+                mask_resized,                       
+                save_path=os.path.join(output_dir, f"{base_name}_visualization.png")
+            )
+            
+            o3d.visualization.draw_geometries([pcd])
+            
+            # Save mask if available
+            
+    
+            
     
     def process_directory(
         self,
         input_dir: str,
         output_dir: str,
-        save_overlay: bool = True,
-        alpha: float = 0.5,
+        save_visualization: bool = True,
+        cmap: str = 'jet',
         batch_size = 1,
-
     ):
         """Process all images in a directory."""
         input_path = Path(input_dir)
@@ -204,68 +237,78 @@ class FaceParsingInference:
             image_files.extend(input_path.glob(f"*{ext}"))
             image_files.extend(input_path.glob(f"*{ext.upper()}"))
         
+        if len(image_files) == 0:
+            print(f"No images found in {input_dir}")
+            return
+            
         print(f"Found {len(image_files)} images to process")
-        print(f"These will be processed with batch size {batch_size}")       
+        print(f"Processing with batch size {batch_size}")       
        
-
         num_imgs = len(image_files)
-
-        # Process each image
-        for img_idx in range(0, num_imgs, batch_size):
+        
+        # Process each batch with progress tracking
+        from tqdm import tqdm
+        for img_idx in tqdm(range(0, num_imgs, batch_size), desc="Processing batches"):
             image_paths = image_files[img_idx:img_idx+batch_size]
-            pred_masks = self.predict(image_paths)
-            self.save_results(
-                image_paths,
-                pred_masks,                
-                output_dir,
-                save_overlay,
-                alpha
-            )
+            try:
+                pred_depth, pred_mask, original_sizes = self.predict(image_paths)
+                self.save_results(
+                    image_paths,
+                    pred_depth,
+                    pred_mask,
+                    original_sizes,
+                    output_dir,
+                    save_visualization,
+                    cmap
+                )
+            except Exception as e:
+                print(f"Error processing batch starting at index {img_idx}: {e}")
+                continue
             
 
 
 def main():
     """Main inference function."""
     args = parse_args()
-
-    root = "/media/jseob/3D-PHOTO-02/k_hairstyle_hqset/Training/masked"
-
-
-    input_dirs = []
-    save_dirs = []
-    style_names = sorted(os.listdir(root))
-    for style_name in style_names:
-        style_dir = os.path.join(root, style_name)
-        subj_names = sorted(os.listdir(style_dir))
-
-        for subj_name in subj_names:
-            subj_dir = os.path.join(style_dir, subj_name)
-            save_dir = subj_dir.replace("masked", "segmentations")            
-
-            input_dirs.append(subj_dir)
-            save_dirs.append(save_dir)
-    
     
     # Create inference object
-    inference = FaceParsingInference(
+    inference = FaceDepthInference(
         checkpoint_path=args.checkpoint,
         dinov3_checkpoint_path=args.dinov3_checkpoint,
         device=args.device,
         image_size=tuple(args.image_size),
-        num_classes=args.num_classes
+        output_channels=args.output_channels
     )
     
     # Check if input is file or directory
-
-    for input_dir, save_dir in tqdm(zip(input_dirs, save_dirs)):    
+    input_path = Path(args.input_dir)
+    
+    if input_path.is_file():
+        # Single image inference
+        print(f"Processing single image: {input_path}")
+        pred_depth, pred_mask, original_sizes = inference.predict([str(input_path)])
+        inference.save_results(
+            [str(input_path)],
+            pred_depth,
+            pred_mask,
+            original_sizes,
+            args.output_dir,
+            args.save_visualization,
+            args.cmap
+        )
+        print(f"Results saved to {args.output_dir}")
+    elif input_path.is_dir():
         # Process directory
         inference.process_directory(
-            input_dir,
-            save_dir,
-            args.save_overlay,
-            args.alpha,
-            batch_size=8,
+            args.input_dir,
+            args.output_dir,
+            args.save_visualization,
+            args.cmap,
+            batch_size=args.batch_size,
         )
+        print(f"Processing complete. Results saved to {args.output_dir}")
+    else:
+        raise ValueError(f"Input path {input_path} does not exist")
     
 
 

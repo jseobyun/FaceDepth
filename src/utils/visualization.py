@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import open3d as o3d
 from typing import List, Optional, Tuple
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -75,9 +76,8 @@ class FaceDepthVisualizer:
     @staticmethod
     def visualize_prediction(
         image_path: str,
-        pred_depth: torch.Tensor,
-        gt_depth: Optional[torch.Tensor] = None,
-        cmap: str = 'jet',
+        pred_depth: torch.Tensor,    
+        pred_mask: torch.Tensor,            
         save_path: Optional[str] = None
     ) -> np.ndarray:
         """
@@ -94,90 +94,34 @@ class FaceDepthVisualizer:
             Visualization as numpy array
         """
         # Convert to numpy        
-        pred_np = FaceDepthVisualizer.tensor_to_numpy(pred_depth)
-        
-        # Get depth colormaps
-        pred_color = FaceDepthVisualizer.depth_to_colormap(pred_np, cmap=cmap)
-        img_h, img_w = pred_color.shape[:2]
+        pred_depth = FaceDepthVisualizer.tensor_to_numpy(pred_depth)
+        pred_mask = FaceDepthVisualizer.tensor_to_numpy(pred_mask)
+        # Get depth colormaps        
+        img_h, img_w = pred_depth.shape[:2]
         
         # Load and resize input image
-        image_np = cv2.imread(image_path)
+        image_np = cv2.imread(image_path)        
         image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-        image_np = cv2.resize(image_np, dsize=(img_w, img_h))
-        
-        # Create figure
-        if gt_depth is not None:
-            gt_np = FaceDepthVisualizer.tensor_to_numpy(gt_depth)
-            gt_color = FaceDepthVisualizer.depth_to_colormap(gt_np, cmap=cmap)
-            
-            # Calculate error map
-            error = np.abs(pred_np - gt_np)
-            error_color = FaceDepthVisualizer.depth_to_colormap(error, cmap='hot')
-            
-            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-            
-            axes[0, 0].imshow(image_np)
-            axes[0, 0].set_title('Input Image')
-            axes[0, 0].axis('off')
-            
-            axes[0, 1].imshow(gt_color)
-            axes[0, 1].set_title('Ground Truth Depth')
-            axes[0, 1].axis('off')
-            
-            axes[0, 2].imshow(pred_color)
-            axes[0, 2].set_title('Predicted Depth')
-            axes[0, 2].axis('off')
-            
-            axes[1, 0].imshow(error_color)
-            axes[1, 0].set_title('Absolute Error')
-            axes[1, 0].axis('off')
-            
-            # Show depth histograms
-            axes[1, 1].hist(gt_np.flatten(), bins=50, alpha=0.5, label='GT', color='blue')
-            axes[1, 1].hist(pred_np.flatten(), bins=50, alpha=0.5, label='Pred', color='red')
-            axes[1, 1].set_title('Depth Distribution')
-            axes[1, 1].set_xlabel('Depth Value')
-            axes[1, 1].set_ylabel('Frequency')
-            axes[1, 1].legend()
-            
-            # Calculate and display metrics
-            rmse = np.sqrt(np.mean((pred_np - gt_np) ** 2))
-            mae = np.mean(np.abs(pred_np - gt_np))
-            axes[1, 2].text(0.1, 0.7, f'RMSE: {rmse:.4f}', fontsize=12)
-            axes[1, 2].text(0.1, 0.5, f'MAE: {mae:.4f}', fontsize=12)
-            axes[1, 2].set_title('Metrics')
-            axes[1, 2].axis('off')
-            
-        else:
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-            
-            axes[0].imshow(image_np)
-            axes[0].set_title('Input Image')
-            axes[0].axis('off')
-            
-            axes[1].imshow(pred_color)
-            axes[1].set_title('Predicted Depth')
-            axes[1].axis('off')
-            
-            # Show depth histogram
-            axes[2].hist(pred_np.flatten(), bins=50, color='blue')
-            axes[2].set_title('Depth Distribution')
-            axes[2].set_xlabel('Depth Value')
-            axes[2].set_ylabel('Frequency')
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=100, bbox_inches='tight')
-        
-        # Convert figure to numpy array
-        fig.canvas.draw()
-        vis_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        vis_array = vis_array.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        
-        plt.close()
-        
-        return vis_array
+        image_np = cv2.resize(image_np, dsize=(img_w, img_h))        
+
+        u, v = np.meshgrid(np.arange(0, img_w), np.arange(0, img_h), indexing="xy")
+        cx = img_w/2
+        cy = img_h/2
+        f = img_w/2
+
+        x = (u-cx) / f
+        y = (v-cy) / f
+        z = pred_depth        
+        points = np.concatenate([x[:,:,None], y[:,:,None], z[:,:,None]], axis=-1)
+        valid = pred_mask >0.3
+        colors = image_np[valid].reshape(-1, 3).astype(np.float32)/255.0
+        points = points[valid].reshape(-1, 3)
+
+        pcd = o3d.geometry.PointCloud(points=o3d.utility.Vector3dVector(points))
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+
+
+        return pcd
     
     @staticmethod
     def save_depth_map(depth: np.ndarray, save_path: str, normalize: bool = True):
