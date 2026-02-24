@@ -14,6 +14,8 @@ A deep learning model for high-quality face depth estimation using DINOv3 and cu
 - Python 3.8+
 - CUDA 11.0+ (for GPU support)
 - PyTorch 2.0+
+- Open3D 0.17+ (mesh export)
+- Trimesh 4.0+ (DXF/PLY conversion)
 
 ### Setup
 
@@ -25,14 +27,14 @@ pip install -r requirements.txt
 
 
 Download pretrained weights:
-   - DINOv3 weights: Place in `checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth`
+   - DINOv3 weights: Place in `checkpoints/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth`
    - Decoder weights: Place in `experiments/checkpoints/decoder.ckpt`
 
 #### DINOv3 Weights
-The DINOv3 weights (`dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth`) are from the official DINOv3 repository and should be downloaded separately:
+The DINOv3 weights (`dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth`) are from the official DINOv3 repository and should be downloaded separately:
 - Source: [Official DINOv3 Repository](https://github.com/facebookresearch/dinov3)
-- Model: ViT-L/16 pretrained on LVD-1689M dataset
-- Place the weights in: `checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth`
+- Model: ViT-B/16 pretrained on LVD-1689M dataset
+- Place the weights in: `checkpoints/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth`
 
 #### Decoder Weights
 Only the [decoder weights](https://drive.google.com/file/d/1IycwybMnUWOs3TWrKt4AY9fCdbbt-jY-/view?usp=drive_link) are provided in this repository (`experiments/checkpoints/decoder.ckpt`). These weights include:
@@ -58,10 +60,11 @@ python inference.py \
     --input_dir path/to/images/ \
     --output_dir outputs/ \
     --checkpoint experiments/checkpoints/decoder.ckpt \
-    --dinov3_checkpoint checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth \
+    --dinov3_checkpoint checkpoints/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth \
     --image_size 512 512 \
-    --save_visualization \
-    --cmap jet
+    --output_dim 1024 \
+    --bayer_n 8 \
+    --save
 ```
 
 ### Training
@@ -89,7 +92,7 @@ Edit `configs/default_config.yaml` to customize:
 ### Components
 
 1. **Encoder**:
-   - DINOv3 ViT-L/16 backbone for feature extraction
+   - DINOv3 ViT-B/16 backbone for feature extraction
    - CNN branch for multi-scale features
    - Feature fusion module
 
@@ -106,9 +109,10 @@ Edit `configs/default_config.yaml` to customize:
 ## Output Files
 
 For each input image, the model generates:
-- `*_mask.png`: Binary face mask
-- `*_visualization.png`: Side-by-side visualization with depth colormap
-- Point cloud display (interactive)
+- `*_mesh.obj`: Textured triangle mesh exported by `FaceDepthVisualizer`
+- `*_pcd.dxf`: Halftone-based DXF point cloud for downstream CAD/CAM
+- `*_pcd.ply`: Point cloud export using the same DXF points
+- (Optional) `*_mask.png`: Binary mask if you enable the commented line in `inference.py`
 
 ## Project Structure
 
