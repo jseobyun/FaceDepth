@@ -116,14 +116,15 @@ def main():
         devices= hardware_config["gpus"] if hardware_config["accelerator"] == 'gpu' else 'auto',
         callbacks=callbacks,
         logger=logger,
-        precision=32,
+        precision="bf16-mixed",
         gradient_clip_val=1.0,
         accumulate_grad_batches=1,
         log_every_n_steps=logging_config["log_every_n_steps"],
         val_check_interval=logging_config["val_check_interval"],
         check_val_every_n_epoch=logging_config["check_val_every_n_epoch"],
         num_sanity_val_steps=0,
-        deterministic=False
+        deterministic=False,
+        strategy='auto' if len(hardware_config["gpus"]) == 1 else 'ddp'
     )
     
     # Train model

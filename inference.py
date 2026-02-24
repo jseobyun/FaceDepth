@@ -12,30 +12,35 @@ from typing import Optional
 
 from src.models import FaceDepthModel
 from src.utils.visualization import FaceDepthVisualizer
+from src.utils.postprocess import FaceDepthConverter
 
 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Face Depth Estimation Inference')
     
-    parser.add_argument('--input_dir', type=str, default="/home/jseob/Downloads/TEST/FD_test",
+    parser.add_argument('--input_dir', type=str, default="/home/jseob/Downloads/TEST/dxf_test/images",
                         help='Path to input image or directory')
-    parser.add_argument('--output_dir', type=str, default='./outputs',
+    parser.add_argument('--output_dir', type=str, default='/home/jseob/Downloads/TEST/dxf_test/img1024dot8',
                         help='Path to output directory')
     parser.add_argument('--checkpoint', type=str, default="experiments/checkpoints/decoder.ckpt",
                         help='Path to decoder checkpoint (without dinov3)')
-    parser.add_argument('--dinov3_checkpoint', type=str, default="checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth",
+    parser.add_argument('--dinov3_checkpoint', type=str, default="checkpoints/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth",
                         help='Path to dinov3 checkpoint')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                         help='Device to run inference on')
     parser.add_argument('--image_size', type=int, nargs=2, default=[512, 512],
-                        help='Input image size (height, width)')    
-    parser.add_argument('--save_visualization', action='store_true', default=False,
-                        help='Save depth visualization')    
+                        help='Input image size (height, width)')        
     parser.add_argument('--output_channels', type=int, default=2,
                         help='Number of output channels (depth + mask)')
-    parser.add_argument('--batch_size', type=int, default=1,
+    parser.add_argument('--output_dim', type=int, default=1024,
+                        help='Output DXF dimension')
+    parser.add_argument('--bayer_n', type=int, default=8, choices=[2,4,8],
+                        help='Number of bayer during DXF conversion')    
+    parser.add_argument('--batch_size', type=int, default=1,                        
                         help='Batch size for processing multiple images')
+    parser.add_argument('--save', action='store_true', default=True,
+                        help='Save results')
     
     return parser.parse_args()
 
@@ -49,11 +54,15 @@ class FaceDepthInference:
         dinov3_checkpoint_path: str = None,
         device: str = 'cuda',
         image_size: tuple = (512, 512),
-        output_channels: int = 2
+        output_channels: int = 2,
+        output_dim: int = 512,
+        bayer_n: int = 8,
     ):
         self.device = torch.device(device)
         self.image_size = image_size
         self.output_channels = output_channels
+        self.output_dim = output_dim
+        self.bayer_n = bayer_n
         
         # Load model
         self.model = self._load_model(checkpoint_path, dinov3_checkpoint_path)
@@ -67,6 +76,8 @@ class FaceDepthInference:
         
         # Visualizer
         self.visualizer = FaceDepthVisualizer()
+        # Converter 
+        self.dxf_converter = FaceDepthConverter(output_dim, bayer_n)
     
     def _load_model(self, checkpoint_path: str, dinov3_checkpoint_path: str = None):
         """Load model from checkpoint with separate dinov3 loading."""
@@ -74,7 +85,7 @@ class FaceDepthInference:
         if dinov3_checkpoint_path:
             print(f"Loading DINOv3 from {dinov3_checkpoint_path}")
             REPO_DIR = "src/models/"
-            dinov3 = torch.hub.load(REPO_DIR, 'dinov3_vitl16', source='local', 
+            dinov3 = torch.hub.load(REPO_DIR, 'dinov3_vitb16', source='local',
                                    weights=dinov3_checkpoint_path)
             dinov3 = dinov3.to(self.device)
         else:
@@ -162,8 +173,7 @@ class FaceDepthInference:
         pred_mask: Optional[torch.Tensor],
         original_sizes: list,
         output_dir: str,
-        save_visualization: bool = True,
-        cmap: str = 'jet'
+        save: bool = True,        
     ):
         """Save depth estimation results."""
         
@@ -198,31 +208,32 @@ class FaceDepthInference:
                 mask_resized = mask
             
             mask_np = (mask_resized.cpu().numpy() * 255).astype(np.uint8)
-            cv2.imwrite(os.path.join(output_dir, f"{base_name}_mask.png"), mask_np)
-            
-            
+            if save:
+                # cv2.imwrite(os.path.join(output_dir, f"{base_name}_mask.png"), mask_np)
                 
-            # Save side-by-side visualization
-            pcd = self.visualizer.visualize_prediction(
-                image_path,
-                depth_resized,   
-                mask_resized,                       
-                save_path=os.path.join(output_dir, f"{base_name}_visualization.png")
-            )
+                self.visualizer.visualize_prediction(
+                    image_path,
+                    depth_resized,   
+                    mask_resized,                       
+                    save_path=os.path.join(output_dir, f"{base_name}_mesh.obj") # None if you don't want to save.
+                )
+
+                self.dxf_converter.convert(
+                    image_path,
+                    depth_resized,
+                    mask_resized,
+                    save_path=os.path.join(output_dir, f"{base_name}_pcd.dxf"), # None if you don't want to save.
+                )
             
-            o3d.visualization.draw_geometries([pcd])
             
-            # Save mask if available
-            
-    
+
             
     
     def process_directory(
         self,
         input_dir: str,
         output_dir: str,
-        save_visualization: bool = True,
-        cmap: str = 'jet',
+        save: bool = True,        
         batch_size = 1,
     ):
         """Process all images in a directory."""
@@ -256,8 +267,7 @@ class FaceDepthInference:
                     pred_mask,
                     original_sizes,
                     output_dir,
-                    save_visualization,
-                    cmap
+                    save,                    
                 )
             except Exception as e:
                 print(f"Error processing batch starting at index {img_idx}: {e}")
@@ -275,7 +285,9 @@ def main():
         dinov3_checkpoint_path=args.dinov3_checkpoint,
         device=args.device,
         image_size=tuple(args.image_size),
-        output_channels=args.output_channels
+        output_channels=args.output_channels,
+        output_dim=args.output_dim,
+        bayer_n=args.bayer_n,
     )
     
     # Check if input is file or directory
@@ -291,8 +303,8 @@ def main():
             pred_mask,
             original_sizes,
             args.output_dir,
-            args.save_visualization,
-            args.cmap
+            args.save,
+            
         )
         print(f"Results saved to {args.output_dir}")
     elif input_path.is_dir():
@@ -300,8 +312,7 @@ def main():
         inference.process_directory(
             args.input_dir,
             args.output_dir,
-            args.save_visualization,
-            args.cmap,
+            args.save,            
             batch_size=args.batch_size,
         )
         print(f"Processing complete. Results saved to {args.output_dir}")

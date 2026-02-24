@@ -129,7 +129,7 @@ class Decoder(nn.Module):
     - Scale 2: VGG19 features (channels: 128)
     - Scale 4: VGG19 features (channels: 256)
     - Scale 8: VGG19 features (channels: 512)
-    - Scale 16: DINOv3 features (channels: 1024)
+    - Scale 16: DINOv3 features (channels: 768)
     """
     
     def __init__(self, output_channels: int = 2, decoder_channels: int = 256):
@@ -143,7 +143,7 @@ class Decoder(nn.Module):
         self.adapt_scale2 = ConvBNReLU(128, decoder_channels // 2, 1, 1, 0)  # scale 2 (128 channels)
         self.adapt_scale4 = ConvBNReLU(256, decoder_channels, 1, 1, 0)       # scale 4 (256 channels)
         self.adapt_scale8 = ConvBNReLU(512, decoder_channels, 1, 1, 0)       # scale 8 (512 channels)
-        self.adapt_scale16 = ConvBNReLU(1024, decoder_channels * 2, 1, 1, 0) # scale 16 (DINOv3, 1024 channels)
+        self.adapt_scale16 = ConvBNReLU(768, decoder_channels * 2, 1, 1, 0) # scale 16 (DINOv3, 1024 channels)
         
         # Attention refinement for DINOv3 features
         self.arm16 = AttentionRefinementModule(decoder_channels * 2)
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         2: torch.randn(batch_size, 128, H//2, W//2), # VGG19 scale 2
         4: torch.randn(batch_size, 256, H//4, W//4), # VGG19 scale 4
         8: torch.randn(batch_size, 512, H//8, W//8), # VGG19 scale 8
-        16: torch.randn(batch_size, 1024, H//16, W//16), # DINOv3 scale 16
+        16: torch.randn(batch_size, 768, H//16, W//16), # DINOv3 scale 16
     }
     
     # Create decoder
